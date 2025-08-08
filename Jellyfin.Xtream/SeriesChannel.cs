@@ -208,6 +208,15 @@ public class SeriesChannel(ILogger<SeriesChannel> logger) : IChannel, IDisableMe
                 audioInfo: episode.Info?.Audio)
         ];
 
+        long? runtimeTicks = episode.Info?.DurationSecs is int secs
+            ? TimeSpan.TicksPerSecond * secs
+            : null;
+
+        if (runtimeTicks.HasValue)
+        {
+            sources[0].RunTimeTicks = runtimeTicks.Value;
+        }
+
         string? cover = episode.Info?.MovieImage;
         cover ??= season?.Cover;
         cover ??= serie.Cover;
@@ -226,6 +235,7 @@ public class SeriesChannel(ILogger<SeriesChannel> logger) : IChannel, IDisableMe
             Overview = episode.Info?.Plot,
             People = GetPeople(serie.Cast),
             Tags = new(parsedName.Tags),
+            RunTimeTicks = runtimeTicks,
             Type = ChannelItemType.Media,
         };
     }
