@@ -7,6 +7,8 @@
 
 The Jellyfin.Xtream plugin can be used to integrate the content provided by an [Xtream-compatible API](https://xtream-ui.org/api-xtreamui-xtreamcode/) in your [Jellyfin](https://jellyfin.org/) instance.
 
+Xtream streams now report their runtime for episodes and VOD items, enabling Jellyfin to track playback progress.
+
 ## Installation
 
 The plugin can be installed using a custom plugin repository.

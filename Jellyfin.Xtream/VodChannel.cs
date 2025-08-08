@@ -19,6 +19,7 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Xtream.Client;
 using Jellyfin.Xtream.Client.Models;
 using Jellyfin.Xtream.Providers;
 using Jellyfin.Xtream.Service;
@@ -114,35 +115,54 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
         }
     }
 
-    private Task<ChannelItemInfo> CreateChannelItemInfo(StreamInfo stream)
+    private async Task<ChannelItemInfo> CreateChannelItemInfo(StreamInfo stream, CancellationToken cancellationToken)
     {
         long added = long.Parse(stream.Added, CultureInfo.InvariantCulture);
         ParsedName parsedName = StreamService.ParseName(stream.Name);
+
+        VodInfo? info = null;
+        using (XtreamClient client = new())
+        {
+            VodStreamInfo vod = await client.GetVodInfoAsync(Plugin.Instance.Creds, stream.StreamId, cancellationToken).ConfigureAwait(false);
+            info = vod.Info;
+        }
 
         List<MediaSourceInfo> sources =
         [
             Plugin.Instance.StreamService.GetMediaSourceInfo(
                 StreamType.Vod,
                 stream.StreamId,
-                stream.ContainerExtension)
+                stream.ContainerExtension,
+                videoInfo: info?.Video,
+                audioInfo: info?.Audio)
         ];
+
+        long? runtimeTicks = info?.DurationSecs is int secs
+            ? TimeSpan.TicksPerSecond * secs
+            : null;
+
+        if (runtimeTicks.HasValue)
+        {
+            sources[0].RunTimeTicks = runtimeTicks.Value;
+        }
 
         ChannelItemInfo result = new ChannelItemInfo()
         {
             ContentType = ChannelMediaContentType.Movie,
             DateCreated = DateTimeOffset.FromUnixTimeSeconds(added).DateTime,
-            Id = $"{StreamService.StreamPrefix}{stream.StreamId}",
+            Id = StreamService.ToGuid(StreamService.StreamPrefix, stream.CategoryId ?? 0, stream.StreamId, 0).ToString(),
             ImageUrl = stream.StreamIcon,
             IsLiveStream = false,
             MediaSources = sources,
             MediaType = ChannelMediaType.Video,
             Name = parsedName.Title,
+            RunTimeTicks = runtimeTicks,
             Tags = new List<string>(parsedName.Tags),
             Type = ChannelItemType.Media,
             ProviderIds = { { XtreamVodProvider.ProviderName, stream.StreamId.ToString(CultureInfo.InvariantCulture) } },
         };
 
-        return Task.FromResult(result);
+        return result;
     }
 
     private async Task<ChannelItemResult> GetCategories(CancellationToken cancellationToken)
@@ -160,7 +180,7 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
     private async Task<ChannelItemResult> GetStreams(int categoryId, CancellationToken cancellationToken)
     {
         IEnumerable<StreamInfo> streams = await Plugin.Instance.StreamService.GetVodStreams(categoryId, cancellationToken).ConfigureAwait(false);
-        List<ChannelItemInfo> items = [.. await Task.WhenAll(streams.Select(CreateChannelItemInfo)).ConfigureAwait(false)];
+        List<ChannelItemInfo> items = [.. await Task.WhenAll(streams.Select(s => CreateChannelItemInfo(s, cancellationToken))).ConfigureAwait(false)];
         ChannelItemResult result = new ChannelItemResult()
         {
             Items = items,
